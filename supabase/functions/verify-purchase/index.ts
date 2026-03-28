@@ -6,10 +6,12 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const DEFAULT_ORIGIN = "https://slscourse.lovable.app";
+
 // ── Simple in-memory rate limiter ──
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT_WINDOW = 60_000; // 1 minute
-const RATE_LIMIT_MAX = 10; // max 10 requests per IP per minute
+const RATE_LIMIT_WINDOW = 60_000;
+const RATE_LIMIT_MAX = 10;
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
@@ -27,7 +29,6 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // ── Rate limiting ──
   const clientIp =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("cf-connecting-ip") ||
@@ -53,10 +54,7 @@ Deno.serve(async (req) => {
     if (!stripeSecretKey) {
       console.error("STRIPE_SECRET_KEY not configured");
       return new Response(
-        JSON.stringify({
-          success: false,
-          error: "Payment verification is not configured. Please contact support.",
-        }),
+        JSON.stringify({ success: false, error: "Payment verification is not configured." }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -107,11 +105,7 @@ Deno.serve(async (req) => {
 
     if (existing?.course_access && existing?.stripe_customer_id) {
       return new Response(
-        JSON.stringify({
-          success: true,
-          alreadyProcessed: true,
-          email: customerEmail,
-        }),
+        JSON.stringify({ success: true, alreadyProcessed: true, email: customerEmail }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -135,17 +129,40 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ── 5. Create auth user (invite with magic link) ──
-    const baseUrl = req.headers.get("origin") ?? "https://slscourse.lovable.app";
+    // ── 5. Create auth user if needed + generate magic link ──
+    const baseUrl = req.headers.get("origin") ?? DEFAULT_ORIGIN;
+    let magicLinkUrl = `${baseUrl}/login`;
+
+    // Try to create user (will fail silently if exists)
     try {
-      await adminClient.auth.admin.inviteUserByEmail(customerEmail, {
-        redirectTo: `${baseUrl}/portal`,
+      await adminClient.auth.admin.createUser({
+        email: customerEmail,
+        email_confirm: true,
       });
-    } catch (inviteErr: unknown) {
-      console.log("Invite note (may already exist):", inviteErr);
+    } catch (_e) {
+      console.log("User may already exist, continuing...");
     }
 
-    // ── 6. Send emails via Resend ──
+    // Generate a magic link
+    try {
+      const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+        type: "magiclink",
+        email: customerEmail,
+        options: {
+          redirectTo: `${baseUrl}/portal`,
+        },
+      });
+
+      if (linkError) {
+        console.error("generateLink error:", linkError);
+      } else if (linkData?.properties?.action_link) {
+        magicLinkUrl = linkData.properties.action_link;
+      }
+    } catch (linkErr) {
+      console.error("Magic link generation error:", linkErr);
+    }
+
+    // ── 6. Send ONE email via Resend with the magic link ──
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
     const resendFrom = Deno.env.get("RESEND_FROM_EMAIL") ?? "noreply@mail.sheaslegacyscalping.com";
     const adminEmail = Deno.env.get("RESEND_ADMIN_EMAIL") ?? "donovinsims@gmail.com";
@@ -155,7 +172,7 @@ Deno.serve(async (req) => {
       const productNames = lineItems.map((li: any) => li.description || "SLS Vault Course").join(", ");
       const amountPaid = (session.amount_total / 100).toFixed(2);
 
-      // Buyer confirmation
+      // Single buyer email with magic link
       try {
         await fetch("https://api.resend.com/emails", {
           method: "POST",
@@ -171,11 +188,11 @@ Deno.serve(async (req) => {
               <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
                 <h1 style="color: #1a1a1a; font-size: 24px;">Welcome to SLS Vault! 🎉</h1>
                 <p style="color: #444; line-height: 1.6;">Your purchase of <strong>${productNames}</strong> ($${amountPaid}) was successful.</p>
-                <p style="color: #444; line-height: 1.6;">Your course access is now active. Sign in below to start learning:</p>
+                <p style="color: #444; line-height: 1.6;">Your course access is now active. Click the button below to sign in instantly:</p>
                 <div style="text-align: center; margin: 30px 0;">
-                  <a href="${baseUrl}/login" style="background: #c9a84c; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">Go to Course Login</a>
+                  <a href="${magicLinkUrl}" style="background: #c9a84c; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">Access Your Course</a>
                 </div>
-                <p style="color: #888; font-size: 14px;">Use the email you purchased with (${customerEmail}) to sign in via magic link or Google.</p>
+                <p style="color: #888; font-size: 14px;">This link will sign you in automatically. If it expires, visit <a href="${baseUrl}/login" style="color: #c9a84c;">${baseUrl}/login</a> and request a new magic link using ${customerEmail}.</p>
                 <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
                 <p style="color: #aaa; font-size: 12px;">SLS Vault — Shea's Legacy Scalping</p>
               </div>
@@ -218,11 +235,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        alreadyProcessed: false,
-        email: customerEmail,
-      }),
+      JSON.stringify({ success: true, alreadyProcessed: false, email: customerEmail }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {

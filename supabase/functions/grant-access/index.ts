@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 const ADMIN_EMAILS = ["sls25trading@gmail.com", "emaildonovin@gmail.com"];
+const DEFAULT_ORIGIN = "https://slscourse.lovable.app";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -30,15 +31,8 @@ Deno.serve(async (req) => {
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
-    const {
-      data: { user },
-      error: authError,
-    } = await userClient.auth.getUser();
-    if (
-      authError ||
-      !user?.email ||
-      !ADMIN_EMAILS.includes(user.email.toLowerCase())
-    ) {
+    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    if (authError || !user?.email || !ADMIN_EMAILS.includes(user.email.toLowerCase())) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -65,10 +59,7 @@ Deno.serve(async (req) => {
       if (!customerId || !email) {
         return new Response(
           JSON.stringify({ error: "Missing customerId or email" }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
@@ -94,22 +85,39 @@ Deno.serve(async (req) => {
 
       if (updateError) throw updateError;
 
-      // Send magic link
-      const baseUrl =
-        req.headers.get("origin") ?? "https://betacourse.lovable.app";
+      // Create auth user if needed + generate magic link
+      const baseUrl = req.headers.get("origin") ?? DEFAULT_ORIGIN;
+      const customerEmailLower = email.toLowerCase();
+      let magicLinkUrl = `${baseUrl}/login`;
+
       try {
-        await adminClient.auth.admin.inviteUserByEmail(email.toLowerCase(), {
-          redirectTo: `${baseUrl}/portal`,
+        await adminClient.auth.admin.createUser({
+          email: customerEmailLower,
+          email_confirm: true,
         });
-      } catch (inviteErr) {
-        console.log("Invite note (may already exist):", inviteErr);
+      } catch (_e) {
+        console.log("User may already exist, continuing...");
       }
 
-      // Send email via Resend if configured
+      try {
+        const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+          type: "magiclink",
+          email: customerEmailLower,
+          options: { redirectTo: `${baseUrl}/portal` },
+        });
+
+        if (linkError) {
+          console.error("generateLink error:", linkError);
+        } else if (linkData?.properties?.action_link) {
+          magicLinkUrl = linkData.properties.action_link;
+        }
+      } catch (linkErr) {
+        console.error("Magic link generation error:", linkErr);
+      }
+
+      // Send ONE email via Resend with magic link
       const resendApiKey = Deno.env.get("RESEND_API_KEY");
-      const resendFrom =
-        Deno.env.get("RESEND_FROM_EMAIL") ??
-        "noreply@mail.sheaslegacyscalping.com";
+      const resendFrom = Deno.env.get("RESEND_FROM_EMAIL") ?? "noreply@mail.sheaslegacyscalping.com";
       if (resendApiKey) {
         try {
           await fetch("https://api.resend.com/emails", {
@@ -120,17 +128,17 @@ Deno.serve(async (req) => {
             },
             body: JSON.stringify({
               from: resendFrom,
-              to: email.toLowerCase(),
-              subject:
-                "Your SLS Vault Course Access Has Been Activated!",
+              to: customerEmailLower,
+              subject: "Your SLS Vault Course Access Has Been Activated!",
               html: `
                 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
                   <h1 style="color: #1a1a1a; font-size: 24px;">Your Access is Ready! 🎉</h1>
                   <p style="color: #444; line-height: 1.6;">Your SLS Vault course access has been activated by our team.</p>
-                  <p style="color: #444; line-height: 1.6;">Check your email for a login link, or sign in below:</p>
+                  <p style="color: #444; line-height: 1.6;">Click the button below to sign in instantly:</p>
                   <div style="text-align: center; margin: 30px 0;">
-                    <a href="${baseUrl}/login" style="background: #c9a84c; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">Go to Course Login</a>
+                    <a href="${magicLinkUrl}" style="background: #c9a84c; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">Access Your Course</a>
                   </div>
+                  <p style="color: #888; font-size: 14px;">If the link expires, visit <a href="${baseUrl}/login" style="color: #c9a84c;">${baseUrl}/login</a> and request a new magic link.</p>
                   <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
                   <p style="color: #aaa; font-size: 12px;">SLS Vault — Shea's Legacy Scalping</p>
                 </div>
