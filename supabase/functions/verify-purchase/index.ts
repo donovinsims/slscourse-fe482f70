@@ -64,7 +64,6 @@ Deno.serve(async (req) => {
       `https://api.stripe.com/v1/checkout/sessions/${sessionId}?expand[]=line_items`,
       { headers: { Authorization: `Bearer ${stripeSecretKey}` } }
     );
-
     if (!stripeRes.ok) {
       const errBody = await stripeRes.text();
       console.error("Stripe API error:", stripeRes.status, errBody);
@@ -73,9 +72,7 @@ Deno.serve(async (req) => {
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
     const session = await stripeRes.json();
-
     if (session.payment_status !== "paid") {
       return new Response(
         JSON.stringify({ success: false, error: "Payment not completed." }),
@@ -120,7 +117,6 @@ Deno.serve(async (req) => {
       },
       { onConflict: "email" }
     );
-
     if (upsertError) {
       console.error("Customer upsert error:", upsertError);
       return new Response(
@@ -152,7 +148,6 @@ Deno.serve(async (req) => {
           redirectTo: `${baseUrl}/portal`,
         },
       });
-
       if (linkError) {
         console.error("generateLink error:", linkError);
       } else if (linkData?.properties?.action_link) {
@@ -162,10 +157,15 @@ Deno.serve(async (req) => {
       console.error("Magic link generation error:", linkErr);
     }
 
-    // ── 6. Send ONE email via Resend with the magic link ──
+    // ── 6. Send emails via Resend ──
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
     const resendFrom = Deno.env.get("RESEND_FROM_EMAIL") ?? "noreply@mail.sheaslegacyscalping.com";
-    const adminEmail = Deno.env.get("RESEND_ADMIN_EMAIL") ?? "donovinsims@gmail.com";
+
+    // Parse comma-separated admin emails, falling back to default list
+    const adminEmailEnv = Deno.env.get("RESEND_ADMIN_EMAIL");
+    const adminEmails: string[] = adminEmailEnv
+      ? adminEmailEnv.split(",").map((e) => e.trim()).filter(Boolean)
+      : ["sls25trading@gmail.com", "emaildonovin@gmail.com", "donovinsims@gmail.com"];
 
     if (resendApiKey) {
       const lineItems = session.line_items?.data ?? [];
@@ -203,34 +203,38 @@ Deno.serve(async (req) => {
         console.error("Buyer email error:", emailErr);
       }
 
-      // Admin notification
-      try {
-        await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${resendApiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: resendFrom,
-            to: adminEmail,
-            subject: `💰 New Sale: ${customerEmail} — $${amountPaid}`,
-            html: `
-              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
-                <h1 style="color: #1a1a1a; font-size: 24px;">New Course Sale! 💰</h1>
-                <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-                  <tr><td style="padding: 8px 0; color: #888;">Customer</td><td style="padding: 8px 0; font-weight: 600;">${customerEmail}</td></tr>
-                  <tr><td style="padding: 8px 0; color: #888;">Amount</td><td style="padding: 8px 0; font-weight: 600;">$${amountPaid}</td></tr>
-                  <tr><td style="padding: 8px 0; color: #888;">Product</td><td style="padding: 8px 0;">${productNames}</td></tr>
-                  <tr><td style="padding: 8px 0; color: #888;">Stripe Session</td><td style="padding: 8px 0; font-size: 12px;">${sessionId}</td></tr>
-                  <tr><td style="padding: 8px 0; color: #888;">Access</td><td style="padding: 8px 0; color: green; font-weight: 600;">✅ Auto-granted</td></tr>
-                </table>
-              </div>
-            `,
-          }),
-        });
-      } catch (emailErr) {
-        console.error("Admin email error:", emailErr);
+      // Admin notifications — send to each admin email
+      const adminHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+          <h1 style="color: #1a1a1a; font-size: 24px;">New Course Sale! 💰</h1>
+          <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr><td style="padding: 8px 0; color: #888;">Customer</td><td style="padding: 8px 0; font-weight: 600;">${customerEmail}</td></tr>
+            <tr><td style="padding: 8px 0; color: #888;">Amount</td><td style="padding: 8px 0; font-weight: 600;">$${amountPaid}</td></tr>
+            <tr><td style="padding: 8px 0; color: #888;">Product</td><td style="padding: 8px 0;">${productNames}</td></tr>
+            <tr><td style="padding: 8px 0; color: #888;">Stripe Session</td><td style="padding: 8px 0; font-size: 12px;">${sessionId}</td></tr>
+            <tr><td style="padding: 8px 0; color: #888;">Access</td><td style="padding: 8px 0; color: green; font-weight: 600;">✅ Auto-granted</td></tr>
+          </table>
+        </div>
+      `;
+
+      for (const adminEmail of adminEmails) {
+        try {
+          await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${resendApiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              from: resendFrom,
+              to: adminEmail,
+              subject: `💰 New Sale: ${customerEmail} — $${amountPaid}`,
+              html: adminHtml,
+            }),
+          });
+        } catch (emailErr) {
+          console.error(`Admin email error for ${adminEmail}:`, emailErr);
+        }
       }
     }
 
