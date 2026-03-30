@@ -8,6 +8,12 @@ const corsHeaders = {
 
 const DEFAULT_ORIGIN = "https://slscourse.lovable.app";
 
+const ADMIN_EMAILS = [
+  "sls25trading@gmail.com",
+  "emaildonovin@gmail.com",
+  "donovinsims@gmail.com",
+];
+
 // Simple rate limiter
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW = 60_000;
@@ -63,7 +69,9 @@ Deno.serve(async (req) => {
       (u) => u.email?.toLowerCase() === cleanEmail
     );
 
-    if (!existingUser) {
+    const isAdmin = ADMIN_EMAILS.includes(cleanEmail);
+
+    if (!existingUser && !isAdmin) {
       // Check if they have a customer record (purchased but no auth user yet)
       const { data: customer } = await adminClient
         .from("customers")
@@ -82,7 +90,7 @@ Deno.serve(async (req) => {
           console.log("User creation failed, may already exist");
         }
       } else {
-        // No account and no purchase — still send a generic response
+        // No account, no purchase, and not an admin — send a generic response
         // to avoid email enumeration, but don't actually send a link
         return new Response(
           JSON.stringify({ success: true }),
