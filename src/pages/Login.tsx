@@ -24,19 +24,21 @@ const Login = () => {
     if (!email.trim()) return;
 
     setSending(true);
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: {
-        emailRedirectTo: `${window.location.origin}/portal`,
-      },
-    });
+    try {
+      const { data, error } = await supabase.functions.invoke("send-magic-link", {
+        body: { email: email.trim() },
+      });
 
-    if (error) {
+      if (error) {
+        toast.error("Failed to send login link. Please try again.");
+        console.error(error);
+      } else {
+        setSent(true);
+        toast.success("Check your email for the login link!");
+      }
+    } catch (err) {
       toast.error("Failed to send login link. Please try again.");
-      console.error(error);
-    } else {
-      setSent(true);
-      toast.success("Check your email for the login link!");
+      console.error(err);
     }
     setSending(false);
   };
