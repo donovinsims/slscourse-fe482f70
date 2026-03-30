@@ -71,31 +71,43 @@ Deno.serve(async (req) => {
 
     const isAdmin = ADMIN_EMAILS.includes(cleanEmail);
 
-    if (!existingUser && !isAdmin) {
-      // Check if they have a customer record (purchased but no auth user yet)
-      const { data: customer } = await adminClient
-        .from("customers")
-        .select("course_access")
-        .eq("email", cleanEmail)
-        .maybeSingle();
-
-      if (customer?.course_access) {
-        // Create auth user for existing customer
+    if (!existingUser) {
+      if (isAdmin) {
+        // Admin emails always get an auth account created if one doesn't exist
         try {
           await adminClient.auth.admin.createUser({
             email: cleanEmail,
             email_confirm: true,
           });
         } catch (_e) {
-          console.log("User creation failed, may already exist");
+          console.log("Admin user creation failed, may already exist");
         }
       } else {
-        // No account, no purchase, and not an admin — send a generic response
-        // to avoid email enumeration, but don't actually send a link
-        return new Response(
-          JSON.stringify({ success: true }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        // Check if they have a customer record (purchased but no auth user yet)
+        const { data: customer } = await adminClient
+          .from("customers")
+          .select("course_access")
+          .eq("email", cleanEmail)
+          .maybeSingle();
+
+        if (customer?.course_access) {
+          // Create auth user for existing customer
+          try {
+            await adminClient.auth.admin.createUser({
+              email: cleanEmail,
+              email_confirm: true,
+            });
+          } catch (_e) {
+            console.log("User creation failed, may already exist");
+          }
+        } else {
+          // No account, no purchase, and not an admin — send a generic response
+          // to avoid email enumeration, but don't actually send a link
+          return new Response(
+            JSON.stringify({ success: true }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
       }
     }
 
