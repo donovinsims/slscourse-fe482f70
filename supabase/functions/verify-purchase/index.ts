@@ -161,11 +161,23 @@ Deno.serve(async (req) => {
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
     const resendFrom = Deno.env.get("RESEND_FROM_EMAIL") ?? "noreply@mail.sheaslegacyscalping.com";
 
-    // Parse comma-separated admin emails, falling back to default list
-    const adminEmailEnv = Deno.env.get("RESEND_ADMIN_EMAIL");
-    const adminEmails: string[] = adminEmailEnv
-      ? adminEmailEnv.split(",").map((e) => e.trim()).filter(Boolean)
-      : ["sls25trading@gmail.com", "emaildonovin@gmail.com", "donovinsims@gmail.com"];
+    // Parse admin email list: allow comma-separated list via env var and always include defaults.
+    const adminEmailsEnv = Deno.env.get("RESEND_ADMIN_EMAIL") ?? "";
+    const DEFAULT_ADMIN_EMAILS = [
+      "sls25trading@gmail.com",
+      "emaildonovin@gmail.com",
+      "donovinsims@gmail.com",
+    ];
+
+    // Split the environment variable and clean up entries
+    let adminEmails: string[] = adminEmailsEnv
+      .split(",")
+      .map((e) => e.trim())
+      .filter((e) => e.length > 0);
+
+    // Always include default admin emails to ensure they receive notifications
+    const uniqueAdmins = new Set([...adminEmails, ...DEFAULT_ADMIN_EMAILS]);
+    adminEmails = Array.from(uniqueAdmins);
 
     if (resendApiKey) {
       const lineItems = session.line_items?.data ?? [];
