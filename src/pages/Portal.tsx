@@ -36,11 +36,13 @@ const Portal = () => {
 
     const canAccess = access.isAdmin || access.hasCourseAccess;
     if (!canAccess) {
+      setLoadingError(null);
       setLoadingData(false);
       return;
     }
 
     const loadVideos = async () => {
+      setLoadingData(true);
       setLoadingError(null);
       const { data, error } = await supabase.rpc("get_course_videos");
       if (error) {

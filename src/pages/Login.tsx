@@ -59,8 +59,9 @@ const Login = () => {
       setErrorMessage(message);
       toast.error(message);
       console.error(err);
+    } finally {
+      setSending(false);
     }
-    setSending(false);
   };
 
   if (loading) {
