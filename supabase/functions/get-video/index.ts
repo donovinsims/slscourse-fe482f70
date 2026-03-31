@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isAdminEmail, normalizeEmail } from "../_shared/admin.ts";
+import { claimCustomerForAuthUser } from "../_shared/customer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -49,11 +50,7 @@ Deno.serve(async (req) => {
     const isAdmin = await isAdminEmail(adminClient, email);
 
     if (!isAdmin) {
-      const { data: customer } = await adminClient
-        .from("customers")
-        .select("id, course_access")
-        .eq("email", email)
-        .maybeSingle();
+      const customer = await claimCustomerForAuthUser(adminClient, user.id, email);
 
       if (!customer?.course_access) {
         return new Response(JSON.stringify({ error: "No course access" }), {
@@ -67,17 +64,22 @@ Deno.serve(async (req) => {
     if (isAdmin) {
       const { data: cust } = await adminClient
         .from("customers")
-        .upsert({ email, course_access: true }, { onConflict: "email" })
+        .upsert(
+          { email, course_access: true, auth_user_id: user.id, auth_linked_at: new Date().toISOString() },
+          { onConflict: "email" }
+        )
         .select("id")
         .single();
       customerId = cust!.id;
     } else {
-      const { data: cust } = await adminClient
-        .from("customers")
-        .select("id")
-        .eq("email", email)
-        .single();
-      customerId = cust!.id;
+      const customer = await claimCustomerForAuthUser(adminClient, user.id, email);
+      if (!customer) {
+        return new Response(JSON.stringify({ error: "No course access" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      customerId = customer.id;
     }
 
     // Fetch video including transcript and summary

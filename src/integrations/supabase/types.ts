@@ -56,9 +56,26 @@ export type Database = {
           },
         ]
       }
+      admin_users: {
+        Row: {
+          created_at: string
+          email: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           access_expires_at: string | null
+          auth_linked_at: string | null
+          auth_user_id: string | null
           course_access: boolean
           email: string
           id: string
@@ -67,6 +84,8 @@ export type Database = {
         }
         Insert: {
           access_expires_at?: string | null
+          auth_linked_at?: string | null
+          auth_user_id?: string | null
           course_access?: boolean
           email: string
           id?: string
@@ -75,6 +94,8 @@ export type Database = {
         }
         Update: {
           access_expires_at?: string | null
+          auth_linked_at?: string | null
+          auth_user_id?: string | null
           course_access?: boolean
           email?: string
           id?: string
@@ -82,6 +103,65 @@ export type Database = {
           stripe_customer_id?: string | null
         }
         Relationships: []
+      }
+      stripe_checkout_fulfillments: {
+        Row: {
+          access_granted_at: string | null
+          auth_user_id: string | null
+          created_at: string
+          customer_email: string
+          customer_id: string | null
+          failure_reason: string | null
+          magic_link_generated_at: string | null
+          payment_intent_id: string | null
+          status: string
+          stripe_customer_id: string | null
+          stripe_event_id: string | null
+          stripe_session_id: string
+          updated_at: string
+          welcome_email_sent_at: string | null
+        }
+        Insert: {
+          access_granted_at?: string | null
+          auth_user_id?: string | null
+          created_at?: string
+          customer_email: string
+          customer_id?: string | null
+          failure_reason?: string | null
+          magic_link_generated_at?: string | null
+          payment_intent_id?: string | null
+          status: string
+          stripe_customer_id?: string | null
+          stripe_event_id?: string | null
+          stripe_session_id: string
+          updated_at?: string
+          welcome_email_sent_at?: string | null
+        }
+        Update: {
+          access_granted_at?: string | null
+          auth_user_id?: string | null
+          created_at?: string
+          customer_email?: string
+          customer_id?: string | null
+          failure_reason?: string | null
+          magic_link_generated_at?: string | null
+          payment_intent_id?: string | null
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_event_id?: string | null
+          stripe_session_id?: string
+          updated_at?: string
+          welcome_email_sent_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stripe_checkout_fulfillments_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       video_sessions: {
         Row: {
@@ -172,6 +252,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_customer_for_auth_user: {
+        Args: { p_auth_user_id: string; p_email: string }
+        Returns: {
+          auth_user_id: string
+          course_access: boolean
+          email: string
+          id: string
+        }[]
+      }
       get_course_videos: {
         Args: never
         Returns: {

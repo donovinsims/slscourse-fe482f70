@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isAdminEmail, normalizeEmail } from "../_shared/admin.ts";
 import { getAppOrigin } from "../_shared/origin.ts";
+import { claimCustomerForAuthUser } from "../_shared/customer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -93,10 +94,11 @@ Deno.serve(async (req) => {
       let magicLinkUrl = `${baseUrl}/login`;
 
       try {
-        await adminClient.auth.admin.createUser({
+        const { data: createdUser } = await adminClient.auth.admin.createUser({
           email: customerEmailLower,
           email_confirm: true,
         });
+        await claimCustomerForAuthUser(adminClient, createdUser.user?.id ?? null, customerEmailLower);
       } catch (_e) {
         console.log("User may already exist, continuing...");
       }

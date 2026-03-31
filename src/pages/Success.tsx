@@ -1,41 +1,56 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 
-type Status = "verifying" | "success" | "already" | "error";
+type Status = "loading" | "processing" | "fulfilled" | "failed";
+
+const POLL_INTERVAL_MS = 3_000;
+const POLL_TIMEOUT_MS = 45_000;
+
+interface VerifyPurchaseResponse {
+  success: boolean;
+  status: "processing" | "fulfilled" | "failed" | "not_found";
+  email?: string;
+  emailSent?: boolean;
+  accessGranted?: boolean;
+  failureReason?: string;
+  error?: string;
+}
 
 const Success = () => {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const [status, setStatus] = useState<Status>("verifying");
+  const [status, setStatus] = useState<Status>("loading");
   const [email, setEmail] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [emailSent, setEmailSent] = useState(false);
   const [accessGranted, setAccessGranted] = useState(false);
-  const verifiedRef = useRef(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     const sessionId = searchParams.get("session_id");
     if (!sessionId) {
-      setStatus("error");
+      setStatus("failed");
       setErrorMsg("No payment session found. If you completed a purchase, please contact support.");
       return;
     }
 
-    // Prevent double-fire from React strict mode
-    if (verifiedRef.current) return;
-    verifiedRef.current = true;
+    let cancelled = false;
+    let timeoutId: number | null = null;
+    const startedAt = Date.now();
 
-    const verify = async () => {
+    const pollStatus = async () => {
       try {
-        const { data, error } = await supabase.functions.invoke("verify-purchase", {
+        const { data, error } = await supabase.functions.invoke<VerifyPurchaseResponse>("verify-purchase", {
           body: { sessionId },
         });
 
+        if (cancelled) return;
+
         if (error || !data?.success) {
-          setStatus("error");
+          setStatus("failed");
           setErrorMsg(
             data?.error ?? "Could not verify this payment session. Please contact support with your payment confirmation."
           );
@@ -45,20 +60,61 @@ const Success = () => {
         setEmail(data.email ?? "");
         setEmailSent(Boolean(data.emailSent));
         setAccessGranted(Boolean(data.accessGranted));
-        setStatus(data.alreadyProcessed ? "already" : "success");
+
+        if (data.status === "fulfilled") {
+          setStatus("fulfilled");
+          return;
+        }
+
+        if (data.status === "failed") {
+          setStatus("failed");
+          setErrorMsg(
+            data.failureReason ??
+              "We received your payment, but hit a setup issue. Try signing in or request a fresh login link."
+          );
+          return;
+        }
+
+        const elapsed = Date.now() - startedAt;
+        if (elapsed >= POLL_TIMEOUT_MS) {
+          setStatus("failed");
+          setErrorMsg(
+            "We received your payment, but your course setup is taking longer than expected. Try signing in or request a fresh login link."
+          );
+          return;
+        }
+
+        setStatus("processing");
+        timeoutId = window.setTimeout(() => {
+          void pollStatus();
+        }, POLL_INTERVAL_MS);
       } catch {
-        setStatus("error");
-        setErrorMsg("An unexpected error occurred. Please contact support.");
+        if (cancelled) return;
+        setStatus("failed");
+        setErrorMsg("We couldn't confirm your access automatically. Try signing in, then contact support if you're still blocked.");
       }
     };
 
-    verify();
-  }, [searchParams]);
+    setStatus("loading");
+    setErrorMsg("");
+    setEmail("");
+    setEmailSent(false);
+    setAccessGranted(false);
+
+    void pollStatus();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [retryKey, searchParams]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-md text-center space-y-6">
-        {status === "verifying" && (
+        {status === "loading" && (
           <div className="rounded-lg bg-card p-8 shadow-md border border-border">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
               <svg className="h-8 w-8 text-primary animate-spin" fill="none" viewBox="0 0 24 24">
@@ -67,15 +123,40 @@ const Success = () => {
               </svg>
             </div>
             <h1 className="font-display text-2xl font-semibold text-foreground mb-2">
-              Verifying Your Payment...
+              Confirming Your Purchase...
             </h1>
             <p className="text-muted-foreground">
-              Please wait while we confirm your purchase. This should only take a moment.
+              Please wait while we check your payment and course setup.
             </p>
           </div>
         )}
 
-        {(status === "success" || status === "already") && (
+        {status === "processing" && (
+          <div className="rounded-lg bg-card p-8 shadow-md border border-border">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+              <svg className="h-8 w-8 text-primary animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            </div>
+            <h1 className="font-display text-3xl font-semibold text-foreground mb-2">
+              Payment Received
+            </h1>
+            <p className="text-muted-foreground mb-6">
+              We&apos;re finishing your course setup now. Keep this page open and we&apos;ll update it automatically.
+            </p>
+            <div className="space-y-3">
+              <Button variant="outline" size="lg" className="w-full" onClick={() => setRetryKey((value) => value + 1)}>
+                Check Again Now
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                This page checks every few seconds for up to 45 seconds.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {status === "fulfilled" && (
           <div className="rounded-lg bg-card p-8 shadow-md border border-border">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[hsl(var(--success))]/10">
               <svg className="h-8 w-8 text-[hsl(var(--success))]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -83,12 +164,10 @@ const Success = () => {
               </svg>
             </div>
             <h1 className="font-display text-3xl font-semibold text-foreground mb-2">
-              {status === "already" ? "Your Access Is Ready" : "Your Access Is Ready"}
+              Your Access Is Ready
             </h1>
             <p className="text-muted-foreground mb-2">
-              {status === "already"
-                ? "Your course access is already active, and you can sign in any time."
-                : "Your payment was confirmed and course access has been granted automatically."}
+              Your payment was confirmed and your course access is active.
             </p>
             {email && emailSent && (
               <p className="text-muted-foreground mb-6">
@@ -124,7 +203,7 @@ const Success = () => {
           </div>
         )}
 
-        {status === "error" && (
+        {status === "failed" && (
           <div className="rounded-lg bg-card p-8 shadow-md border border-border">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
               <svg className="h-8 w-8 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -132,10 +211,16 @@ const Success = () => {
               </svg>
             </div>
             <h1 className="font-display text-2xl font-semibold text-foreground mb-2">
-              We Couldn&apos;t Confirm Your Payment Yet
+              We Need One More Step
             </h1>
             <p className="text-muted-foreground mb-6">{errorMsg}</p>
             <div className="space-y-3">
+              <Button variant="cta" size="lg" className="w-full" onClick={() => setRetryKey((value) => value + 1)}>
+                Check Again
+              </Button>
+              <Button variant="outline" size="lg" className="w-full" asChild>
+                <Link to="/login">Request Fresh Login Link</Link>
+              </Button>
               <Button variant="cta" size="lg" className="w-full" asChild>
                 <Link to="/login">Try Signing In</Link>
               </Button>
@@ -143,8 +228,7 @@ const Success = () => {
                 <Link to="/">Back to Home</Link>
               </Button>
               <p className="text-xs text-muted-foreground">
-                If you completed payment, your access may already be active.
-                Try signing in with the email you used at checkout.
+                If you completed payment, your access may already be active. Try signing in with the email you used at checkout before contacting support.
               </p>
               <a
                 href="mailto:donovinsims@gmail.com"

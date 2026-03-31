@@ -49,6 +49,8 @@ Deno.serve(async (req) => {
     params.append("customer_creation", "always");
     params.append("line_items[0][price]", priceId);
     params.append("line_items[0][quantity]", "1");
+    params.append("metadata[product]", "course");
+    params.append("metadata[price_type]", resolvedPriceType);
     params.append("success_url", `${origin}/success?session_id={CHECKOUT_SESSION_ID}`);
     params.append("cancel_url", `${origin}/`);
 
