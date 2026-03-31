@@ -1,12 +1,14 @@
 import { useEffect, useState, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 
 type Status = "verifying" | "success" | "already" | "error";
 
 const Success = () => {
   const [searchParams] = useSearchParams();
+  const { user } = useAuth();
   const [status, setStatus] = useState<Status>("verifying");
   const [email, setEmail] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -77,26 +79,30 @@ const Success = () => {
               </svg>
             </div>
             <h1 className="font-display text-3xl font-semibold text-foreground mb-2">
-              {status === "already" ? "Access Already Active!" : "You're All Set! 🎉"}
+              {status === "already" ? "Your Access Is Ready" : "Your Access Is Ready"}
             </h1>
             <p className="text-muted-foreground mb-2">
               {status === "already"
-                ? "Your course access is already active."
+                ? "Your course access is already active, and you can sign in any time."
                 : "Your payment was confirmed and course access has been granted automatically."}
             </p>
             {email && (
               <p className="text-muted-foreground mb-6">
-                A login link has been sent to{" "}
+                A sign-in link has been sent to{" "}
                 <strong className="text-foreground">{email}</strong>. Check your
-                inbox (and spam folder).
+                inbox and spam folder, then open your dashboard.
               </p>
             )}
             <div className="space-y-3">
               <Button variant="cta" size="lg" className="w-full" asChild>
-                <Link to="/login">Go to Course Login</Link>
+                <Link to={user ? "/portal" : "/login"}>
+                  {user ? "Go to Dashboard" : "Open Login Page"}
+                </Link>
               </Button>
               <p className="text-xs text-muted-foreground">
-                Use the email above to sign in with a magic link.
+                {user
+                  ? "Your session is already active."
+                  : "Use the same email you used at checkout."}
               </p>
             </div>
           </div>

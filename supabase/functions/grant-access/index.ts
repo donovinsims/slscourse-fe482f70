@@ -1,13 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isAdminEmail, normalizeEmail } from "../_shared/admin.ts";
+import { getAppOrigin } from "../_shared/origin.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
-
-const ADMIN_EMAILS = ["sls25trading@gmail.com", "emaildonovin@gmail.com", "donovinsims@gmail.com"];
-const DEFAULT_ORIGIN = Deno.env.get("EDGE_FUNCTION_DEFAULT_ORIGIN") ?? "http://localhost:5173";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -16,7 +15,7 @@ Deno.serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SB_SERVICE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
     // Verify caller is admin
@@ -32,14 +31,17 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: { user }, error: authError } = await userClient.auth.getUser();
-    if (authError || !user?.email || !ADMIN_EMAILS.includes(user.email.toLowerCase())) {
+    const adminClient = createClient(supabaseUrl, supabaseServiceKey);
+    const normalizedEmail = normalizeEmail(user?.email);
+    const isAdmin = await isAdminEmail(adminClient, normalizedEmail);
+
+    if (authError || !user?.email || !isAdmin) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const adminClient = createClient(supabaseUrl, supabaseServiceKey);
     const { action, customerId, email } = await req.json();
 
     if (action === "list") {
@@ -86,7 +88,7 @@ Deno.serve(async (req) => {
       if (updateError) throw updateError;
 
       // Create auth user if needed + generate magic link
-      const baseUrl = req.headers.get("origin") ?? DEFAULT_ORIGIN;
+      const baseUrl = getAppOrigin(req);
       const customerEmailLower = email.toLowerCase();
       let magicLinkUrl = `${baseUrl}/login`;
 

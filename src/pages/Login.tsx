@@ -34,7 +34,7 @@ const Login = () => {
         console.error(error);
       } else {
         setSent(true);
-        toast.success("Check your email for the login link!");
+        toast.success("If an account is available for this email, a sign-in link is on the way.");
       }
     } catch (err) {
       toast.error("Failed to send login link. Please try again.");
@@ -60,7 +60,7 @@ const Login = () => {
             Sign In
           </h1>
           <p className="text-muted-foreground">
-            Enter your email to receive a magic login link.
+            Enter your email to receive a magic sign-in link for your dashboard.
           </p>
         </div>
 
@@ -75,8 +75,14 @@ const Login = () => {
               Check Your Email
             </h2>
             <p className="text-muted-foreground mb-6">
-              We've sent a login link to <strong className="text-foreground">{email}</strong>
+              If an account is available for <strong className="text-foreground">{email}</strong>, a login link is on its way.
             </p>
+            <p className="text-sm text-muted-foreground mb-6">
+              If you have not purchased the course yet, use the button below to get access first.
+            </p>
+            <Button variant="outline" className="w-full mb-4" asChild>
+              <a href="/">Purchase Course Access</a>
+            </Button>
             <button
               onClick={() => setSent(false)}
               className="text-primary underline hover:text-primary/80 transition-colors text-sm"

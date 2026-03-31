@@ -5,8 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-
-const ADMIN_EMAILS = ["sls25trading@gmail.com", "emaildonovin@gmail.com", "donovinsims@gmail.com"];
+import { useAccessState } from "@/hooks/use-access-state";
 
 interface Video {
   id: string;
@@ -19,9 +18,9 @@ interface Video {
 
 const Portal = () => {
   const { user, loading, signOut } = useAuth();
+  const access = useAccessState();
   const navigate = useNavigate();
   const [videos, setVideos] = useState<Video[]>([]);
-  const [hasAccess, setHasAccess] = useState<boolean | null>(null);
   const [loadingData, setLoadingData] = useState(true);
 
   useEffect(() => {
@@ -31,36 +30,15 @@ const Portal = () => {
   }, [user, loading, navigate]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || access.loading) return;
 
-    const checkAccessAndLoadVideos = async () => {
-      const email = user.email?.toLowerCase() ?? "";
-      const isAdmin = ADMIN_EMAILS.includes(email);
+    const canAccess = access.isAdmin || access.hasCourseAccess;
+    if (!canAccess) {
+      setLoadingData(false);
+      return;
+    }
 
-      if (!isAdmin) {
-        const { data: customer } = await supabase
-          .from("customers")
-          .select("course_access")
-          .eq("email", email)
-          .maybeSingle();
-
-        if (!customer?.course_access) {
-          setHasAccess(false);
-          setLoadingData(false);
-          return;
-        }
-      }
-
-      // Admin or has access — ensure customer row exists for admins
-      if (isAdmin) {
-        await supabase.from("customers").upsert(
-          { email, course_access: true },
-          { onConflict: "email" }
-        );
-      }
-
-      setHasAccess(true);
-
+    const loadVideos = async () => {
       const { data, error } = await supabase.rpc("get_course_videos");
       if (error) {
         toast.error("Failed to load videos");
@@ -71,10 +49,13 @@ const Portal = () => {
       setLoadingData(false);
     };
 
-    checkAccessAndLoadVideos();
-  }, [user]);
+    loadVideos();
+  }, [access.hasCourseAccess, access.isAdmin, access.loading, user]);
 
-  if (loading || loadingData) {
+  const isLoadingScreen =
+    loading || access.loading || ((access.isAdmin || access.hasCourseAccess) && loadingData);
+
+  if (isLoadingScreen) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <p className="text-muted-foreground">Loading your course...</p>
@@ -82,19 +63,51 @@ const Portal = () => {
     );
   }
 
-  if (hasAccess === false) {
+  if (access.error) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <div className="text-center max-w-md">
+        <div className="text-center max-w-md space-y-4">
+          <h1 className="font-display text-3xl font-semibold text-foreground mb-4">
+            We Couldn&apos;t Load Your Access
+          </h1>
+          <p className="text-muted-foreground mb-6">{access.error}</p>
+          <div className="flex flex-col gap-3">
+            <Button variant="cta" size="lg" onClick={() => void access.refresh()}>
+              Retry Access Check
+            </Button>
+            <Button variant="outline" size="lg" asChild>
+              <a href="mailto:donovinsims@gmail.com">Contact Support</a>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!access.isAdmin && !access.hasCourseAccess) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="text-center max-w-md space-y-4">
           <h1 className="font-display text-3xl font-semibold text-foreground mb-4">
             No Active Purchase Found
           </h1>
           <p className="text-muted-foreground mb-6">
-            Your account doesn't have an active course subscription. Purchase the course to get access.
+            Your account is signed in, but we could not find active course access for {access.email || "this email"}.
           </p>
-          <Button variant="cta" size="lg" asChild>
-            <a href="/">Get Access</a>
-          </Button>
+          <div className="space-y-3">
+            <Button variant="cta" size="lg" className="w-full" asChild>
+              <Link to="/">Purchase Course Access</Link>
+            </Button>
+            <Button variant="outline" size="lg" className="w-full" asChild>
+              <Link to="/login">Request a Fresh Login Link</Link>
+            </Button>
+            <a
+              href="mailto:donovinsims@gmail.com"
+              className="inline-block text-sm text-primary underline hover:text-primary/80 transition-colors"
+            >
+              Contact Support
+            </a>
+          </div>
         </div>
       </div>
     );
@@ -119,6 +132,11 @@ const Portal = () => {
             <span className="text-sm text-muted-foreground hidden sm:inline">
               {user?.email}
             </span>
+            {access.isAdmin && (
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/admin">Manage Access</Link>
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={signOut}>
               Sign Out
             </Button>
@@ -133,6 +151,9 @@ const Portal = () => {
           <h2 className="font-display text-3xl font-semibold text-foreground">
             Master Day Trading — 24 Lessons
           </h2>
+          <p className="text-muted-foreground mt-2">
+            Open any lesson to watch the video, review the summary, and read the transcript.
+          </p>
         </div>
 
         {Object.entries(modules).map(([moduleName, moduleVideos]) => (

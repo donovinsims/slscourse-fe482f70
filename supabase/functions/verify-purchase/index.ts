@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getAppOrigin } from "../_shared/origin.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,7 +7,9 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const DEFAULT_ORIGIN = Deno.env.get("EDGE_FUNCTION_DEFAULT_ORIGIN") ?? "http://localhost:5173";
+interface StripeLineItem {
+  description?: string | null;
+}
 
 // ── Simple in-memory rate limiter ──
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -90,7 +93,7 @@ Deno.serve(async (req) => {
 
     // ── 2. Supabase admin client ──
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SB_SERVICE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
     // ── 3. Idempotency: check if already processed ──
@@ -126,7 +129,7 @@ Deno.serve(async (req) => {
     }
 
     // ── 5. Create auth user if needed + generate magic link ──
-    const baseUrl = req.headers.get("origin") ?? DEFAULT_ORIGIN;
+    const baseUrl = getAppOrigin(req);
     let magicLinkUrl = `${baseUrl}/login`;
 
     // Try to create user (will fail silently if exists)
@@ -161,27 +164,25 @@ Deno.serve(async (req) => {
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
     const resendFrom = Deno.env.get("RESEND_FROM_EMAIL") ?? "noreply@mail.sheaslegacyscalping.com";
 
-    // Parse admin email list: allow comma-separated list via env var and always include defaults.
+    // Parse admin email list: allow comma-separated list via env var.
     const adminEmailsEnv = Deno.env.get("RESEND_ADMIN_EMAIL") ?? "";
-    const DEFAULT_ADMIN_EMAILS = [
-      "sls25trading@gmail.com",
-      "emaildonovin@gmail.com",
-      "donovinsims@gmail.com",
-    ];
+    const { data: adminUsers } = await adminClient
+      .from("admin_users")
+      .select("email");
 
-    // Split the environment variable and clean up entries
-    let adminEmails: string[] = adminEmailsEnv
+    const envAdminEmails = adminEmailsEnv
       .split(",")
       .map((e) => e.trim())
       .filter((e) => e.length > 0);
-
-    // Always include default admin emails to ensure they receive notifications
-    const uniqueAdmins = new Set([...adminEmails, ...DEFAULT_ADMIN_EMAILS]);
-    adminEmails = Array.from(uniqueAdmins);
+    const adminEmails = Array.from(
+      new Set([...(adminUsers ?? []).map((entry) => entry.email), ...envAdminEmails])
+    );
 
     if (resendApiKey) {
       const lineItems = session.line_items?.data ?? [];
-      const productNames = lineItems.map((li: any) => li.description || "SLS Vault Course").join(", ");
+      const productNames = lineItems
+        .map((li: StripeLineItem) => li.description || "SLS Vault Course")
+        .join(", ");
       const amountPaid = (session.amount_total / 100).toFixed(2);
 
       // Single buyer email with magic link

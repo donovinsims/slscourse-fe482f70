@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getAppOrigin } from "../_shared/origin.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,6 +12,16 @@ const PRICES: Record<string, string> = {
   early_bird: "price_1TEBYp4Fv76iWH7ToEEsVh21",
   regular: "price_1TEBZY4Fv76iWH7TxiNgWHAl",
 };
+
+const REGULAR_PRICE_START = new Date("2026-04-01T00:00:00-05:00");
+
+function resolvePriceType(priceType: unknown) {
+  if (Date.now() >= REGULAR_PRICE_START.getTime()) {
+    return "regular";
+  }
+
+  return priceType === "regular" ? "regular" : "early_bird";
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -27,11 +38,11 @@ Deno.serve(async (req) => {
     }
 
     const { priceType } = await req.json();
-    const priceId = PRICES[priceType] ?? PRICES.early_bird;
+    const resolvedPriceType = resolvePriceType(priceType);
+    const priceId = PRICES[resolvedPriceType];
 
     // Determine the base URL for redirects
-    const DEFAULT_ORIGIN = Deno.env.get("EDGE_FUNCTION_DEFAULT_ORIGIN") ?? "http://localhost:5173";
-    const origin = req.headers.get("origin") ?? DEFAULT_ORIGIN;
+    const origin = getAppOrigin(req);
 
     // Create Stripe Checkout Session
     const params = new URLSearchParams();
@@ -63,7 +74,7 @@ Deno.serve(async (req) => {
     const checkoutSession = await stripeRes.json();
 
     return new Response(
-      JSON.stringify({ url: checkoutSession.url }),
+      JSON.stringify({ url: checkoutSession.url, priceType: resolvedPriceType }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {

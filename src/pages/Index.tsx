@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface VideoMeta {
   id: string;
@@ -12,10 +13,32 @@ interface VideoMeta {
   summary: string;
 }
 
+const REGULAR_PRICE_START = new Date("2026-04-01T00:00:00-05:00");
+
+const getCurrentOffer = () => {
+  const earlyBirdActive = Date.now() < REGULAR_PRICE_START.getTime();
+
+  return earlyBirdActive
+    ? {
+        priceType: "early_bird" as const,
+        priceLabel: "$149",
+        compareAtPrice: "$199",
+        supportingText: "Limited time offer — price increases to $199 on April 1",
+      }
+    : {
+        priceType: "regular" as const,
+        priceLabel: "$199",
+        compareAtPrice: null,
+        supportingText: "Full course access is now live at the standard price.",
+      };
+};
+
 const Index = () => {
   const [modules, setModules] = useState<Record<string, VideoMeta[]>>({});
   const [loadingCurriculum, setLoadingCurriculum] = useState(true);
   const [checkingOut, setCheckingOut] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
+  const currentOffer = getCurrentOffer();
 
   useEffect(() => {
     const load = async () => {
@@ -33,27 +56,27 @@ const Index = () => {
     load();
   }, []);
 
-  const handleCheckout = async (priceType: "early_bird" | "regular" = "early_bird") => {
+  const handleCheckout = async (priceType: "early_bird" | "regular" = currentOffer.priceType) => {
     setCheckingOut(true);
+    setCheckoutError("");
     try {
       const { data, error } = await supabase.functions.invoke("create-checkout", {
         body: { priceType },
       });
 
       if (error || !data?.url) {
-        // Fallback to Stripe payment link
-        const fallbackUrls: Record<string, string> = {
-          early_bird: "https://buy.stripe.com/8x2dR28179hqbAQbv56J200",
-          regular: "https://buy.stripe.com/5kQeV66X351a34kfLl6J201",
-        };
-        window.location.href = fallbackUrls[priceType];
+        const message = "Checkout is unavailable right now. Please try again in a moment or contact support.";
+        setCheckoutError(message);
+        toast.error(message);
         return;
       }
 
       window.location.href = data.url;
-    } catch {
-      // Fallback
-      window.location.href = "https://buy.stripe.com/8x2dR28179hqbAQbv56J200";
+    } catch (error) {
+      console.error(error);
+      const message = "Checkout is unavailable right now. Please try again in a moment or contact support.";
+      setCheckoutError(message);
+      toast.error(message);
     } finally {
       setCheckingOut(false);
     }
@@ -86,13 +109,24 @@ const Index = () => {
             size="lg"
             className="text-lg px-10 py-6"
             disabled={checkingOut}
-            onClick={() => handleCheckout("early_bird")}
+            onClick={() => handleCheckout()}
           >
-            {checkingOut ? "Loading..." : "Get Instant Access — $149"}
+            {checkingOut ? "Loading..." : `Get Instant Access — ${currentOffer.priceLabel}`}
           </Button>
           <p className="text-sm text-muted-foreground">
-            <span className="text-destructive font-medium">Limited time offer</span> — price increases to $199 on April 1
+            {currentOffer.compareAtPrice ? (
+              <>
+                <span className="text-destructive font-medium">Limited time offer</span> — price increases to $199 on April 1
+              </>
+            ) : (
+              currentOffer.supportingText
+            )}
           </p>
+          {checkoutError && (
+            <p className="text-sm text-destructive">
+              {checkoutError} <a className="underline" href="mailto:donovinsims@gmail.com">Contact support</a>.
+            </p>
+          )}
         </div>
       </section>
 
@@ -138,12 +172,16 @@ const Index = () => {
             Full Course Access
           </h2>
           <div className="flex items-baseline justify-center gap-3 mb-2">
-            <span className="text-4xl md:text-5xl font-display font-bold text-foreground">$149</span>
-            <span className="text-xl text-muted-foreground line-through">$199</span>
+            <span className="text-4xl md:text-5xl font-display font-bold text-foreground">
+              {currentOffer.priceLabel}
+            </span>
+            {currentOffer.compareAtPrice && (
+              <span className="text-xl text-muted-foreground line-through">
+                {currentOffer.compareAtPrice}
+              </span>
+            )}
           </div>
-          <p className="text-sm text-destructive font-medium mb-6">
-            Limited time — price increases April 1
-          </p>
+          <p className="text-sm text-muted-foreground mb-6">{currentOffer.supportingText}</p>
           <ul className="text-left max-w-sm mx-auto space-y-3 mb-8">
             {[
               "24 comprehensive video lessons",
@@ -165,7 +203,7 @@ const Index = () => {
             size="lg"
             className="text-lg px-10 py-6"
             disabled={checkingOut}
-            onClick={() => handleCheckout("early_bird")}
+            onClick={() => handleCheckout()}
           >
             {checkingOut ? "Loading..." : "Get Instant Access"}
           </Button>
@@ -185,9 +223,9 @@ const Index = () => {
           size="lg"
           className="text-lg px-10 py-6"
           disabled={checkingOut}
-          onClick={() => handleCheckout("early_bird")}
+          onClick={() => handleCheckout()}
         >
-          {checkingOut ? "Loading..." : "Get Instant Access — $149"}
+          {checkingOut ? "Loading..." : `Get Instant Access — ${currentOffer.priceLabel}`}
         </Button>
       </section>
 

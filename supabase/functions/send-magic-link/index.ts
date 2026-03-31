@@ -1,18 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isAdminEmail } from "../_shared/admin.ts";
+import { getAppOrigin } from "../_shared/origin.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
-
-const DEFAULT_ORIGIN = Deno.env.get("EDGE_FUNCTION_DEFAULT_ORIGIN") ?? "http://localhost:5173";
-
-const ADMIN_EMAILS = [
-  "sls25trading@gmail.com",
-  "emaildonovin@gmail.com",
-  "donovinsims@gmail.com",
-];
 
 // Simple rate limiter
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -58,18 +52,17 @@ Deno.serve(async (req) => {
 
     const cleanEmail = email.trim().toLowerCase();
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SB_SERVICE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
-    const baseUrl = req.headers.get("origin") ?? DEFAULT_ORIGIN;
-
+    const baseUrl = getAppOrigin(req);
     // Check if user exists in auth
     const { data: users } = await adminClient.auth.admin.listUsers();
     const existingUser = users?.users?.find(
       (u) => u.email?.toLowerCase() === cleanEmail
     );
 
-    const isAdmin = ADMIN_EMAILS.includes(cleanEmail);
+    const isAdmin = await isAdminEmail(adminClient, cleanEmail);
 
     if (!existingUser) {
       if (isAdmin) {

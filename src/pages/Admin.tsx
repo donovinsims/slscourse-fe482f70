@@ -4,8 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-
-const ADMIN_EMAILS = ["sls25trading@gmail.com", "emaildonovin@gmail.com", "donovinsims@gmail.com"];
+import { useAccessState } from "@/hooks/use-access-state";
 
 interface Customer {
   id: string;
@@ -16,22 +15,21 @@ interface Customer {
 
 const Admin = () => {
   const { user, loading } = useAuth();
+  const access = useAccessState();
   const navigate = useNavigate();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [granting, setGranting] = useState<string | null>(null);
 
-  const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
-
   useEffect(() => {
     if (!loading && !user) navigate("/login");
-    if (!loading && user && !isAdmin) navigate("/portal");
-  }, [user, loading, isAdmin, navigate]);
+    if (!loading && !access.loading && user && !access.isAdmin) navigate("/portal");
+  }, [user, loading, access.isAdmin, access.loading, navigate]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!access.isAdmin) return;
     fetchCustomers();
-  }, [isAdmin]);
+  }, [access.isAdmin]);
 
   const fetchCustomers = async () => {
     setLoadingData(true);
@@ -61,12 +59,37 @@ const Admin = () => {
     setGranting(null);
   };
 
-  if (loading || !isAdmin) {
+  if (loading || access.loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <p className="text-muted-foreground">Loading...</p>
       </div>
     );
+  }
+
+  if (access.error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="text-center max-w-md space-y-4">
+          <h1 className="font-display text-3xl font-semibold text-foreground mb-4">
+            We Couldn&apos;t Verify Admin Access
+          </h1>
+          <p className="text-muted-foreground mb-6">{access.error}</p>
+          <div className="flex flex-col gap-3">
+            <Button variant="cta" size="lg" onClick={() => void access.refresh()}>
+              Retry
+            </Button>
+            <Button variant="outline" size="lg" asChild>
+              <a href="mailto:donovinsims@gmail.com">Contact Support</a>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!access.isAdmin) {
+    return null;
   }
 
   const pending = customers.filter((c) => !c.course_access);

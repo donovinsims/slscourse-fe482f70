@@ -2,8 +2,9 @@ node_modules
 dist-ssr
 *.local
 .git
+.vercel
 .env
-supabase
+/supabase
 *.log
 .playwright
 test-results

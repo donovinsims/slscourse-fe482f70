@@ -2,12 +2,13 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-
-const ADMIN_EMAILS = ["sls25trading@gmail.com", "emaildonovin@gmail.com", "donovinsims@gmail.com"];
+import { useAccessState } from "@/hooks/use-access-state";
+import { Button } from "@/components/ui/button";
 
 const Watch = () => {
   const { videoId } = useParams<{ videoId: string }>();
   const { user, loading } = useAuth();
+  const access = useAccessState();
   const navigate = useNavigate();
   const [embedUrl, setEmbedUrl] = useState<string | null>(null);
   const [videoTitle, setVideoTitle] = useState("");
@@ -26,25 +27,14 @@ const Watch = () => {
   }, [user, loading, navigate]);
 
   useEffect(() => {
-    if (!user || !videoId) return;
+    if (!user || !videoId || access.loading) return;
 
     const loadVideo = async () => {
       try {
-        const email = user.email?.toLowerCase() ?? "";
-        const isAdmin = ADMIN_EMAILS.includes(email);
-
-        if (!isAdmin) {
-          const { data: customer } = await supabase
-            .from("customers")
-            .select("course_access")
-            .eq("email", email)
-            .maybeSingle();
-
-          if (!customer?.course_access) {
-            setError("No active purchase found.");
-            setLoadingVideo(false);
-            return;
-          }
+        if (!access.isAdmin && !access.hasCourseAccess) {
+          setError("No active purchase found for your account.");
+          setLoadingVideo(false);
+          return;
         }
 
         const fp = `${navigator.userAgent}|${screen.width}x${screen.height}|${Intl.DateTimeFormat().resolvedOptions().timeZone}`;
@@ -77,7 +67,7 @@ const Watch = () => {
     };
 
     loadVideo();
-  }, [user, videoId]);
+  }, [access.hasCourseAccess, access.isAdmin, access.loading, user, videoId]);
 
   // Format transcript into readable paragraphs
   const formatTranscript = (text: string) => {
@@ -94,7 +84,10 @@ const Watch = () => {
     return paragraphs;
   };
 
-  if (loading || loadingVideo) {
+  const isLoadingScreen =
+    loading || access.loading || ((access.isAdmin || access.hasCourseAccess) && loadingVideo);
+
+  if (isLoadingScreen) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
@@ -105,14 +98,51 @@ const Watch = () => {
     );
   }
 
+  if (access.error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="text-center max-w-md space-y-4">
+          <h1 className="font-display text-2xl font-semibold text-foreground mb-4">
+            We Couldn&apos;t Confirm Your Access
+          </h1>
+          <p className="text-muted-foreground mb-6">{access.error}</p>
+          <div className="flex flex-col gap-3">
+            <Button variant="cta" size="lg" asChild>
+              <Link to="/login">Go Back to Sign In</Link>
+            </Button>
+            <Button variant="outline" size="lg" asChild>
+              <a href="mailto:donovinsims@gmail.com">Contact Support</a>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <div className="text-center max-w-md">
+        <div className="text-center max-w-md space-y-4">
           <h1 className="font-display text-2xl font-semibold text-foreground mb-4">{error}</h1>
-          <Link to="/portal" className="text-primary underline hover:text-primary/80">
-            ← Back to Dashboard
-          </Link>
+          <p className="text-muted-foreground">
+            If you recently purchased, return to the dashboard or request a fresh sign-in link. If the problem keeps happening, contact support.
+          </p>
+          <div className="space-y-3">
+            <Button variant="cta" size="lg" className="w-full" asChild>
+              <Link to="/portal">Back to Dashboard</Link>
+            </Button>
+            <Button variant="outline" size="lg" className="w-full" asChild>
+              <Link to="/login">Request Login Link</Link>
+            </Button>
+            {!access.isAdmin && (
+              <Button variant="outline" size="lg" className="w-full" asChild>
+                <Link to="/">Purchase Course Access</Link>
+              </Button>
+            )}
+            <Button variant="outline" size="lg" className="w-full" asChild>
+              <a href="mailto:donovinsims@gmail.com">Contact Support</a>
+            </Button>
+          </div>
         </div>
       </div>
     );

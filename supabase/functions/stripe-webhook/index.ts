@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getAppOrigin } from "../_shared/origin.ts";
 
 // ── Stripe webhook secret from env ──
 // Set via: supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_...
@@ -10,6 +11,31 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version, stripe-signature",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+interface StripeLineItem {
+  description?: string | null;
+}
+
+interface StripeCheckoutSession {
+  id?: string;
+  mode?: string;
+  payment_status?: string;
+  customer?: string | null;
+  customer_details?: {
+    email?: string | null;
+  } | null;
+  amount_total?: number | null;
+  line_items?: {
+    data?: StripeLineItem[];
+  } | null;
+}
+
+interface StripeEvent {
+  type?: string;
+  data?: {
+    object?: StripeCheckoutSession;
+  } | null;
+}
 
 // ── Stripe signature verification (no SDK needed) ──
 async function verifyStripeSignature(
@@ -103,7 +129,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  let event: any;
+  let event: StripeEvent;
   try {
     event = JSON.parse(rawBody);
   } catch {
@@ -121,7 +147,13 @@ Deno.serve(async (req) => {
     });
   }
 
-  const session = event.data.object;
+  const session = event.data?.object;
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Missing session object" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   // Ignore non-payment or unpaid sessions
   if (session.mode !== "payment" || session.payment_status !== "paid") {
@@ -141,7 +173,7 @@ Deno.serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SB_SERVICE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
     // ── Idempotency: skip if already processed ──
@@ -193,19 +225,23 @@ Deno.serve(async (req) => {
     // ── Send emails via Resend ──
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
     const resendFrom = Deno.env.get("RESEND_FROM_EMAIL") ?? "noreply@mail.sheaslegacyscalping.com";
-    const defaultOrigin = Deno.env.get("EDGE_FUNCTION_DEFAULT_ORIGIN") ?? "https://sheaslegacyscalping.com";
+    const defaultOrigin = getAppOrigin(req);
 
     if (resendApiKey) {
       const lineItems = session.line_items?.data ?? [];
-      const productNames = lineItems.map((li: any) => li.description || "SLS Vault Course").join(", ");
+      const productNames = lineItems
+        .map((li: StripeLineItem) => li.description || "SLS Vault Course")
+        .join(", ");
       const amountPaid = ((session.amount_total ?? 0) / 100).toFixed(2);
 
       // Admin emails
       const adminEmailsEnv = Deno.env.get("RESEND_ADMIN_EMAIL") ?? "";
-      const defaultAdmins = ["sls25trading@gmail.com", "emaildonovin@gmail.com", "donovinsims@gmail.com"];
+      const { data: adminUsers } = await adminClient
+        .from("admin_users")
+        .select("email");
       const adminEmails = [
         ...new Set([
-          ...defaultAdmins,
+          ...(adminUsers ?? []).map((entry) => entry.email),
           ...adminEmailsEnv.split(",").map((e: string) => e.trim()).filter(Boolean),
         ]),
       ];
