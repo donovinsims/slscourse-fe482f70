@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const ADMIN_EMAILS = ["sls25trading@gmail.com", "emaildonovin@gmail.com", "donovinsims@gmail.com"];
-const DEFAULT_ORIGIN = "https://slscourse.lovable.app";
+const DEFAULT_ORIGIN = Deno.env.get("EDGE_FUNCTION_DEFAULT_ORIGIN") ?? "http://localhost:5173";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
