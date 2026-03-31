@@ -56,52 +56,33 @@ Deno.serve(async (req) => {
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
     const baseUrl = getAppOrigin(req);
-    // Check if user exists in auth
-    const { data: users } = await adminClient.auth.admin.listUsers();
-    const existingUser = users?.users?.find(
-      (u) => u.email?.toLowerCase() === cleanEmail
-    );
-
     const isAdmin = await isAdminEmail(adminClient, cleanEmail);
+    let accountEligible = isAdmin;
 
-    if (!existingUser) {
-      if (isAdmin) {
-        // Admin emails always get an auth account created if one doesn't exist
-        try {
-          await adminClient.auth.admin.createUser({
-            email: cleanEmail,
-            email_confirm: true,
-          });
-        } catch (_e) {
-          console.log("Admin user creation failed, may already exist");
-        }
-      } else {
-        // Check if they have a customer record (purchased but no auth user yet)
-        const { data: customer } = await adminClient
-          .from("customers")
-          .select("course_access")
-          .eq("email", cleanEmail)
-          .maybeSingle();
+    if (!accountEligible) {
+      const { data: customer } = await adminClient
+        .from("customers")
+        .select("course_access")
+        .eq("email", cleanEmail)
+        .maybeSingle();
 
-        if (customer?.course_access) {
-          // Create auth user for existing customer
-          try {
-            await adminClient.auth.admin.createUser({
-              email: cleanEmail,
-              email_confirm: true,
-            });
-          } catch (_e) {
-            console.log("User creation failed, may already exist");
-          }
-        } else {
-          // No account, no purchase, and not an admin — send a generic response
-          // to avoid email enumeration, but don't actually send a link
-          return new Response(
-            JSON.stringify({ success: true }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-      }
+      accountEligible = Boolean(customer?.course_access);
+    }
+
+    if (!accountEligible) {
+      return new Response(
+        JSON.stringify({ success: true, emailSent: false }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    try {
+      await adminClient.auth.admin.createUser({
+        email: cleanEmail,
+        email_confirm: true,
+      });
+    } catch (_e) {
+      console.log("User creation failed, may already exist");
     }
 
     // Generate magic link
@@ -116,7 +97,7 @@ Deno.serve(async (req) => {
     if (linkError) {
       console.error("generateLink error:", linkError);
       return new Response(
-        JSON.stringify({ error: "Failed to generate login link." }),
+        JSON.stringify({ error: "We couldn't create your sign-in link right now. Please try again in a minute." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -127,46 +108,58 @@ Deno.serve(async (req) => {
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
     const resendFrom = Deno.env.get("RESEND_FROM_EMAIL") ?? "noreply@mail.sheaslegacyscalping.com";
 
-    if (resendApiKey) {
-      try {
-        const res = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${resendApiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: resendFrom,
-            to: cleanEmail,
-            subject: "Your SLS Vault Login Link",
-            html: `
-              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
-                <h1 style="color: #1a1a1a; font-size: 24px;">Sign In to SLS Vault</h1>
-                <p style="color: #444; line-height: 1.6;">Click the button below to sign in to your course dashboard:</p>
-                <div style="text-align: center; margin: 30px 0;">
-                  <a href="${magicLinkUrl}" style="background: #c9a84c; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">Sign In to Your Course</a>
-                </div>
-                <p style="color: #888; font-size: 14px;">This link expires in 1 hour. If it doesn't work, visit <a href="${baseUrl}/login" style="color: #c9a84c;">${baseUrl}/login</a> and request a new one.</p>
-                <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
-                <p style="color: #aaa; font-size: 12px;">SLS Vault — Shea's Legacy Scalping</p>
-              </div>
-            `,
-          }),
-        });
-
-        if (!res.ok) {
-          const errText = await res.text();
-          console.error("Resend error:", res.status, errText);
-        }
-      } catch (emailErr) {
-        console.error("Email send error:", emailErr);
-      }
-    } else {
+    if (!resendApiKey) {
       console.error("RESEND_API_KEY not configured");
+      return new Response(
+        JSON.stringify({ error: "We couldn't send the login email right now. Please try again in a minute." }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: resendFrom,
+          to: cleanEmail,
+          subject: "Your SLS Vault Login Link",
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+              <h1 style="color: #1a1a1a; font-size: 24px;">Sign In to SLS Vault</h1>
+              <p style="color: #444; line-height: 1.6;">Click the button below to sign in to your course dashboard:</p>
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${magicLinkUrl}" style="background: #c9a84c; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">Sign In to Your Course</a>
+              </div>
+              <p style="color: #888; font-size: 14px;">This link expires in 1 hour. If it doesn't work, visit <a href="${baseUrl}/login" style="color: #c9a84c;">${baseUrl}/login</a> and request a new one.</p>
+              <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
+              <p style="color: #aaa; font-size: 12px;">SLS Vault — Shea's Legacy Scalping</p>
+            </div>
+          `,
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error("Resend error:", res.status, errText);
+        return new Response(
+          JSON.stringify({ error: "We couldn't send the login email right now. Please try again in a minute." }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    } catch (emailErr) {
+      console.error("Email send error:", emailErr);
+      return new Response(
+        JSON.stringify({ error: "We couldn't send the login email right now. Please try again in a minute." }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     return new Response(
-      JSON.stringify({ success: true }),
+      JSON.stringify({ success: true, emailSent: true }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {

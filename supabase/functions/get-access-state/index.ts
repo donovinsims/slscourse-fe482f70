@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey =
-      Deno.env.get("SB_SERVICE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      Deno.env.get("SB_SERVICE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
@@ -41,22 +41,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    const adminClient = createClient(supabaseUrl, supabaseServiceKey);
     const email = normalizeEmail(user.email);
-    const isAdmin = await isAdminEmail(adminClient, email);
-
-    if (isAdmin) {
-      return new Response(
-        JSON.stringify({
-          email,
-          isAdmin: true,
-          hasCourseAccess: true,
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const { data: customer, error: customerError } = await adminClient
+    const { data: customer, error: customerError } = await userClient
       .from("customers")
       .select("course_access")
       .eq("email", email)
@@ -68,6 +54,26 @@ Deno.serve(async (req) => {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    let isAdmin = false;
+
+    if (!supabaseServiceKey) {
+      console.warn("[get-access-state] Service role key unavailable, skipping admin lookup.");
+    } else {
+      const adminClient = createClient(supabaseUrl, supabaseServiceKey);
+      isAdmin = await isAdminEmail(adminClient, email);
+    }
+
+    if (isAdmin) {
+      return new Response(
+        JSON.stringify({
+          email,
+          isAdmin: true,
+          hasCourseAccess: true,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     return new Response(

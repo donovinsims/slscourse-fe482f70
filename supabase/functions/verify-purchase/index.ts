@@ -103,9 +103,16 @@ Deno.serve(async (req) => {
       .eq("email", customerEmail)
       .maybeSingle();
 
-    if (existing?.course_access && existing?.stripe_customer_id) {
+    if (existing?.course_access) {
       return new Response(
-        JSON.stringify({ success: true, alreadyProcessed: true, email: customerEmail }),
+        JSON.stringify({
+          success: true,
+          alreadyProcessed: true,
+          accessGranted: true,
+          emailSent: false,
+          magicLinkGenerated: false,
+          email: customerEmail,
+        }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -131,6 +138,7 @@ Deno.serve(async (req) => {
     // ── 5. Create auth user if needed + generate magic link ──
     const baseUrl = getAppOrigin(req);
     let magicLinkUrl = `${baseUrl}/login`;
+    let magicLinkGenerated = false;
 
     // Try to create user (will fail silently if exists)
     try {
@@ -155,6 +163,7 @@ Deno.serve(async (req) => {
         console.error("generateLink error:", linkError);
       } else if (linkData?.properties?.action_link) {
         magicLinkUrl = linkData.properties.action_link;
+        magicLinkGenerated = true;
       }
     } catch (linkErr) {
       console.error("Magic link generation error:", linkErr);
@@ -178,6 +187,8 @@ Deno.serve(async (req) => {
       new Set([...(adminUsers ?? []).map((entry) => entry.email), ...envAdminEmails])
     );
 
+    let emailSent = false;
+
     if (resendApiKey) {
       const lineItems = session.line_items?.data ?? [];
       const productNames = lineItems
@@ -187,7 +198,7 @@ Deno.serve(async (req) => {
 
       // Single buyer email with magic link
       try {
-        await fetch("https://api.resend.com/emails", {
+        const buyerEmailResponse = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${resendApiKey}`,
@@ -212,6 +223,13 @@ Deno.serve(async (req) => {
             `,
           }),
         });
+
+        if (buyerEmailResponse.ok) {
+          emailSent = true;
+        } else {
+          const errText = await buyerEmailResponse.text();
+          console.error("Buyer email error:", buyerEmailResponse.status, errText);
+        }
       } catch (emailErr) {
         console.error("Buyer email error:", emailErr);
       }
@@ -252,7 +270,14 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ success: true, alreadyProcessed: false, email: customerEmail }),
+      JSON.stringify({
+        success: true,
+        alreadyProcessed: false,
+        accessGranted: true,
+        emailSent,
+        magicLinkGenerated,
+        email: customerEmail,
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {

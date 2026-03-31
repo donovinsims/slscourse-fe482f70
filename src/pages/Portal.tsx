@@ -22,6 +22,8 @@ const Portal = () => {
   const navigate = useNavigate();
   const [videos, setVideos] = useState<Video[]>([]);
   const [loadingData, setLoadingData] = useState(true);
+  const [loadingError, setLoadingError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -39,18 +41,21 @@ const Portal = () => {
     }
 
     const loadVideos = async () => {
+      setLoadingError(null);
       const { data, error } = await supabase.rpc("get_course_videos");
       if (error) {
-        toast.error("Failed to load videos");
+        const message = "We confirmed your access, but couldn't load the course library.";
+        toast.error(message);
         console.error(error);
+        setLoadingError(message);
       } else {
         setVideos(data ?? []);
       }
       setLoadingData(false);
     };
 
-    loadVideos();
-  }, [access.hasCourseAccess, access.isAdmin, access.loading, user]);
+    void loadVideos();
+  }, [access.hasCourseAccess, access.isAdmin, access.loading, reloadKey, user]);
 
   const isLoadingScreen =
     loading || access.loading || ((access.isAdmin || access.hasCourseAccess) && loadingData);
@@ -84,29 +89,52 @@ const Portal = () => {
     );
   }
 
+  if (loadingError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="text-center max-w-md space-y-4">
+          <h1 className="font-display text-3xl font-semibold text-foreground mb-4">
+            We Found Your Access
+          </h1>
+          <p className="text-muted-foreground mb-6">
+            {loadingError} Try again now, and contact support if the library still does not load.
+          </p>
+          <div className="flex flex-col gap-3">
+            <Button variant="cta" size="lg" onClick={() => setReloadKey((value) => value + 1)}>
+              Retry Library Load
+            </Button>
+            <Button variant="outline" size="lg" asChild>
+              <a href="mailto:donovinsims@gmail.com">Contact Support</a>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!access.isAdmin && !access.hasCourseAccess) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="text-center max-w-md space-y-4">
           <h1 className="font-display text-3xl font-semibold text-foreground mb-4">
-            No Active Purchase Found
+            We Couldn&apos;t Match This Login To Course Access
           </h1>
           <p className="text-muted-foreground mb-6">
-            Your account is signed in, but we could not find active course access for {access.email || "this email"}.
+            Your account is signed in as {access.email || "this email"}, but we could not find active course access yet. If you paid with another email, sign out and request a link for that inbox.
           </p>
           <div className="space-y-3">
             <Button variant="cta" size="lg" className="w-full" asChild>
-              <Link to="/">Purchase Course Access</Link>
-            </Button>
-            <Button variant="outline" size="lg" className="w-full" asChild>
               <Link to="/login">Request a Fresh Login Link</Link>
             </Button>
-            <a
-              href="mailto:donovinsims@gmail.com"
-              className="inline-block text-sm text-primary underline hover:text-primary/80 transition-colors"
-            >
-              Contact Support
-            </a>
+            <Button variant="outline" size="lg" className="w-full" onClick={signOut}>
+              Use a Different Email
+            </Button>
+            <Button variant="outline" size="lg" className="w-full" asChild>
+              <a href="mailto:donovinsims@gmail.com">Contact Support</a>
+            </Button>
+            <Link to="/" className="inline-block text-sm text-muted-foreground underline hover:text-foreground transition-colors">
+              Back to Home
+            </Link>
           </div>
         </div>
       </div>

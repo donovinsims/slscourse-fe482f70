@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 
 const Watch = () => {
   const { videoId } = useParams<{ videoId: string }>();
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const access = useAccessState();
   const navigate = useNavigate();
   const [embedUrl, setEmbedUrl] = useState<string | null>(null);
@@ -32,7 +32,7 @@ const Watch = () => {
     const loadVideo = async () => {
       try {
         if (!access.isAdmin && !access.hasCourseAccess) {
-          setError("No active purchase found for your account.");
+          setError("We couldn't match this login to active course access.");
           setLoadingVideo(false);
           return;
         }
@@ -134,11 +134,9 @@ const Watch = () => {
             <Button variant="outline" size="lg" className="w-full" asChild>
               <Link to="/login">Request Login Link</Link>
             </Button>
-            {!access.isAdmin && (
-              <Button variant="outline" size="lg" className="w-full" asChild>
-                <Link to="/">Purchase Course Access</Link>
-              </Button>
-            )}
+            <Button variant="outline" size="lg" className="w-full" onClick={signOut}>
+              Use a Different Email
+            </Button>
             <Button variant="outline" size="lg" className="w-full" asChild>
               <a href="mailto:donovinsims@gmail.com">Contact Support</a>
             </Button>

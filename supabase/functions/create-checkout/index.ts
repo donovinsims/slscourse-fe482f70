@@ -1,4 +1,3 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getAppOrigin } from "../_shared/origin.ts";
 
 const corsHeaders = {
@@ -47,11 +46,11 @@ Deno.serve(async (req) => {
     // Create Stripe Checkout Session
     const params = new URLSearchParams();
     params.append("mode", "payment");
+    params.append("customer_creation", "always");
     params.append("line_items[0][price]", priceId);
     params.append("line_items[0][quantity]", "1");
     params.append("success_url", `${origin}/success?session_id={CHECKOUT_SESSION_ID}`);
     params.append("cancel_url", `${origin}/`);
-    params.append("payment_method_types[0]", "card");
 
     const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
       method: "POST",

@@ -5,11 +5,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { FunctionsHttpError } from "@supabase/supabase-js";
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const { user, loading } = useAuth();
   const navigate = useNavigate();
 
@@ -24,20 +26,38 @@ const Login = () => {
     if (!email.trim()) return;
 
     setSending(true);
+    setErrorMessage("");
     try {
       const { data, error } = await supabase.functions.invoke("send-magic-link", {
         body: { email: email.trim() },
       });
 
       if (error) {
-        toast.error("Failed to send login link. Please try again.");
+        let message = "Failed to send login link. Please try again.";
+        if (error instanceof FunctionsHttpError) {
+          const payload = await error.context.json().catch(() => null);
+          message = payload?.error ?? message;
+        }
+
+        setErrorMessage(message);
+        toast.error(message);
         console.error(error);
-      } else {
-        setSent(true);
-        toast.success("If an account is available for this email, a sign-in link is on the way.");
+        return;
       }
+
+      if (!data?.success) {
+        const message = data?.error ?? "Failed to send login link. Please try again.";
+        setErrorMessage(message);
+        toast.error(message);
+        return;
+      }
+
+      setSent(true);
+      toast.success("If an account is available for this email, a sign-in link is on the way.");
     } catch (err) {
-      toast.error("Failed to send login link. Please try again.");
+      const message = "Failed to send login link. Please try again.";
+      setErrorMessage(message);
+      toast.error(message);
       console.error(err);
     }
     setSending(false);
@@ -115,6 +135,11 @@ const Login = () => {
             >
               {sending ? "Sending..." : "Send Login Link"}
             </Button>
+            {errorMessage && (
+              <p className="text-sm text-destructive">
+                {errorMessage} If you already paid, wait a minute and try again, then contact support if it still fails.
+              </p>
+            )}
           </form>
         )}
 

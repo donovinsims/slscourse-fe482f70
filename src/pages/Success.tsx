@@ -12,6 +12,8 @@ const Success = () => {
   const [status, setStatus] = useState<Status>("verifying");
   const [email, setEmail] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [emailSent, setEmailSent] = useState(false);
+  const [accessGranted, setAccessGranted] = useState(false);
   const verifiedRef = useRef(false);
 
   useEffect(() => {
@@ -41,6 +43,8 @@ const Success = () => {
         }
 
         setEmail(data.email ?? "");
+        setEmailSent(Boolean(data.emailSent));
+        setAccessGranted(Boolean(data.accessGranted));
         setStatus(data.alreadyProcessed ? "already" : "success");
       } catch {
         setStatus("error");
@@ -86,11 +90,16 @@ const Success = () => {
                 ? "Your course access is already active, and you can sign in any time."
                 : "Your payment was confirmed and course access has been granted automatically."}
             </p>
-            {email && (
+            {email && emailSent && (
               <p className="text-muted-foreground mb-6">
                 A sign-in link has been sent to{" "}
                 <strong className="text-foreground">{email}</strong>. Check your
                 inbox and spam folder, then open your dashboard.
+              </p>
+            )}
+            {email && !emailSent && accessGranted && (
+              <p className="text-muted-foreground mb-6">
+                Your access is active for <strong className="text-foreground">{email}</strong>, but we could not confirm email delivery. Open the login page and request a fresh sign-in link using that same email.
               </p>
             )}
             <div className="space-y-3">
@@ -99,10 +108,17 @@ const Success = () => {
                   {user ? "Go to Dashboard" : "Open Login Page"}
                 </Link>
               </Button>
+              {!user && (
+                <Button variant="outline" size="lg" className="w-full" asChild>
+                  <Link to="/login">Request Fresh Login Link</Link>
+                </Button>
+              )}
               <p className="text-xs text-muted-foreground">
                 {user
                   ? "Your session is already active."
-                  : "Use the same email you used at checkout."}
+                  : emailSent
+                    ? "Use the same email you used at checkout."
+                    : "If the welcome email did not arrive, the login page will send a new one."}
               </p>
             </div>
           </div>
@@ -116,12 +132,15 @@ const Success = () => {
               </svg>
             </div>
             <h1 className="font-display text-2xl font-semibold text-foreground mb-2">
-              Verification Issue
+              We Couldn&apos;t Confirm Your Payment Yet
             </h1>
             <p className="text-muted-foreground mb-6">{errorMsg}</p>
             <div className="space-y-3">
               <Button variant="cta" size="lg" className="w-full" asChild>
                 <Link to="/login">Try Signing In</Link>
+              </Button>
+              <Button variant="outline" size="lg" className="w-full" asChild>
+                <Link to="/">Back to Home</Link>
               </Button>
               <p className="text-xs text-muted-foreground">
                 If you completed payment, your access may already be active.

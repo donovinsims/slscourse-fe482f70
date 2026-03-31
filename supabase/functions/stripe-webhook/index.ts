@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
       .eq("email", customerEmail)
       .maybeSingle();
 
-    if (existing?.course_access && existing?.stripe_customer_id) {
+    if (existing?.course_access) {
       console.log(`[stripe-webhook] Already processed: ${customerEmail}`);
       return new Response(JSON.stringify({ received: true, alreadyProcessed: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -203,9 +203,8 @@ Deno.serve(async (req) => {
 
     if (upsertError) {
       console.error("[stripe-webhook] Customer upsert error:", upsertError);
-      // Return 200 to prevent Stripe retries for permanent failures,
-      // but log for investigation.
-      return new Response(JSON.stringify({ received: true, upsertFailed: true }), {
+      return new Response(JSON.stringify({ error: "Failed to grant access" }), {
+        status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
