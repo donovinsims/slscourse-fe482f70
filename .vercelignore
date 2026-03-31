@@ -1,10 +1,8 @@
 node_modules
-dist
 dist-ssr
 *.local
 .git
 .env
-.vercel
 supabase
 *.log
 .playwright
