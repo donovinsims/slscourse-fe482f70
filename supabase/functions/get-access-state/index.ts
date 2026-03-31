@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isAdminEmail, normalizeEmail } from "../_shared/admin.ts";
+import { claimCustomerForAuthUser } from "../_shared/customer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -42,27 +43,30 @@ Deno.serve(async (req) => {
     }
 
     const email = normalizeEmail(user.email);
-    const { data: customer, error: customerError } = await userClient
-      .from("customers")
-      .select("course_access")
-      .eq("email", email)
-      .maybeSingle();
-
-    if (customerError) {
-      console.error("[get-access-state] Failed to load customer:", customerError);
-      return new Response(JSON.stringify({ error: "Failed to load access state" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     let isAdmin = false;
+    let hasCourseAccess = false;
 
     if (!supabaseServiceKey) {
       console.warn("[get-access-state] Service role key unavailable, skipping admin lookup.");
+      const { data: customer, error: customerError } = await userClient
+        .from("customers")
+        .select("course_access")
+        .maybeSingle();
+
+      if (customerError) {
+        console.error("[get-access-state] Failed to load customer:", customerError);
+        return new Response(JSON.stringify({ error: "Failed to load access state" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      hasCourseAccess = Boolean(customer?.course_access);
     } else {
       const adminClient = createClient(supabaseUrl, supabaseServiceKey);
       isAdmin = await isAdminEmail(adminClient, email);
+      const customer = await claimCustomerForAuthUser(adminClient, user.id, email);
+      hasCourseAccess = Boolean(customer?.course_access);
     }
 
     if (isAdmin) {
@@ -80,7 +84,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         email,
         isAdmin: false,
-        hasCourseAccess: Boolean(customer?.course_access),
+        hasCourseAccess,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
