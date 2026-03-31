@@ -30,7 +30,8 @@ Deno.serve(async (req) => {
     const priceId = PRICES[priceType] ?? PRICES.early_bird;
 
     // Determine the base URL for redirects
-    const origin = req.headers.get("origin") ?? "https://slscourse.lovable.app";
+    const DEFAULT_ORIGIN = Deno.env.get("EDGE_FUNCTION_DEFAULT_ORIGIN") ?? "http://localhost:5173";
+    const origin = req.headers.get("origin") ?? DEFAULT_ORIGIN;
 
     // Create Stripe Checkout Session
     const params = new URLSearchParams();
