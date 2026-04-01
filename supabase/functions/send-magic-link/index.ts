@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isAdminEmail } from "../_shared/admin.ts";
+import { getSupabaseServiceKey, getSupabaseUrl } from "../_shared/env.ts";
 import { getAppOrigin } from "../_shared/origin.ts";
 
 const corsHeaders = {
@@ -51,8 +52,8 @@ Deno.serve(async (req) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SB_SERVICE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseUrl = getSupabaseUrl();
+    const supabaseServiceKey = getSupabaseServiceKey();
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
     const baseUrl = getAppOrigin(req);
@@ -90,7 +91,7 @@ Deno.serve(async (req) => {
       type: "magiclink",
       email: cleanEmail,
       options: {
-        redirectTo: `${baseUrl}/portal`,
+        redirectTo: `${baseUrl}/auth/callback`,
       },
     });
 

@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { FunctionsHttpError } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -8,6 +7,19 @@ export interface AccessState {
   isAdmin: boolean;
   hasCourseAccess: boolean;
 }
+
+const getFunctionErrorStatus = (error: unknown) => {
+  if (!error || typeof error !== "object" || !("context" in error)) {
+    return null;
+  }
+
+  const context = (error as { context?: unknown }).context;
+  if (!context || typeof context !== "object") {
+    return null;
+  }
+
+  return "status" in context && typeof context.status === "number" ? context.status : null;
+};
 
 export const useAccessState = () => {
   const { user, loading: authLoading, signOut } = useAuth();
@@ -40,7 +52,7 @@ export const useAccessState = () => {
       if (error || !data) {
         console.error("[useAccessState] Failed to load access state:", error);
 
-        if (error instanceof FunctionsHttpError && error.context.status === 401) {
+        if (getFunctionErrorStatus(error) === 401) {
           await signOut();
           if (cancelled) return;
 

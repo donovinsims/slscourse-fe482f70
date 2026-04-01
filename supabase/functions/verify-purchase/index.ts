@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getAppOrigin } from "../_shared/origin.ts";
+import { getSupabaseServiceKey, getSupabaseUrl } from "../_shared/env.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -92,8 +92,8 @@ Deno.serve(async (req) => {
     }
 
     // ── 2. Supabase admin client ──
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SB_SERVICE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseUrl = getSupabaseUrl();
+    const supabaseServiceKey = getSupabaseServiceKey();
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
     // ── 3. Idempotency: check if already processed ──
@@ -156,7 +156,7 @@ Deno.serve(async (req) => {
         type: "magiclink",
         email: customerEmail,
         options: {
-          redirectTo: `${baseUrl}/portal`,
+          redirectTo: `${baseUrl}/auth/callback`,
         },
       });
       if (linkError) {

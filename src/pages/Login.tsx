@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { FunctionsHttpError } from "@supabase/supabase-js";
+import { AUTH_CALLBACK_ERROR_KEY } from "@/lib/auth-callback";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -20,6 +21,16 @@ const Login = () => {
       navigate("/portal");
     }
   }, [user, loading, navigate]);
+
+  useEffect(() => {
+    const callbackError = window.sessionStorage.getItem(AUTH_CALLBACK_ERROR_KEY);
+    if (!callbackError) return;
+
+    window.sessionStorage.removeItem(AUTH_CALLBACK_ERROR_KEY);
+    setErrorMessage(callbackError);
+    toast.error(callbackError);
+    console.error("auth callback error:", callbackError);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

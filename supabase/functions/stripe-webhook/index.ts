@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getSupabaseServiceKey, getSupabaseUrl } from "../_shared/env.ts";
 import { getAppOrigin } from "../_shared/origin.ts";
 
 // ── Stripe webhook secret from env ──
@@ -172,8 +173,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SB_SERVICE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseUrl = getSupabaseUrl();
+    const supabaseServiceKey = getSupabaseServiceKey();
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
     // ── Idempotency: skip if already processed ──
@@ -284,7 +285,7 @@ Deno.serve(async (req) => {
         const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
           type: "magiclink",
           email: customerEmail,
-          options: { redirectTo: `${defaultOrigin}/portal` },
+          options: { redirectTo: `${defaultOrigin}/auth/callback` },
         });
         if (!linkError && linkData?.properties?.action_link) {
           magicLinkUrl = linkData.properties.action_link;

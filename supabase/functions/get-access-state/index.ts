@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isAdminEmail, normalizeEmail } from "../_shared/admin.ts";
 import { claimCustomerForAuthUser } from "../_shared/customer.ts";
+import { getSupabaseAnonKey, getSupabaseServiceKey, getSupabaseUrl } from "../_shared/env.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,10 +23,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey =
-      Deno.env.get("SB_SERVICE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseUrl = getSupabaseUrl();
+    const supabaseServiceKey = getSupabaseServiceKey();
+    const supabaseAnonKey = getSupabaseAnonKey();
 
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -43,31 +43,10 @@ Deno.serve(async (req) => {
     }
 
     const email = normalizeEmail(user.email);
-    let isAdmin = false;
-    let hasCourseAccess = false;
-
-    if (!supabaseServiceKey) {
-      console.warn("[get-access-state] Service role key unavailable, skipping admin lookup.");
-      const { data: customer, error: customerError } = await userClient
-        .from("customers")
-        .select("course_access")
-        .maybeSingle();
-
-      if (customerError) {
-        console.error("[get-access-state] Failed to load customer:", customerError);
-        return new Response(JSON.stringify({ error: "Failed to load access state" }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      hasCourseAccess = Boolean(customer?.course_access);
-    } else {
-      const adminClient = createClient(supabaseUrl, supabaseServiceKey);
-      isAdmin = await isAdminEmail(adminClient, email);
-      const customer = await claimCustomerForAuthUser(adminClient, user.id, email);
-      hasCourseAccess = Boolean(customer?.course_access);
-    }
+    const adminClient = createClient(supabaseUrl, supabaseServiceKey);
+    const isAdmin = await isAdminEmail(adminClient, email);
+    const customer = await claimCustomerForAuthUser(adminClient, user.id, email);
+    const hasCourseAccess = Boolean(customer?.course_access);
 
     if (isAdmin) {
       return new Response(

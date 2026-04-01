@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
+import AuthCallback from "./pages/AuthCallback";
 import Portal from "./pages/Portal";
 import Watch from "./pages/Watch";
 import Success from "./pages/Success";
@@ -26,6 +27,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/portal" element={<Portal />} />
             <Route path="/watch/:videoId" element={<Watch />} />
             <Route path="/success" element={<Success />} />

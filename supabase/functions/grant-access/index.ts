@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isAdminEmail, normalizeEmail } from "../_shared/admin.ts";
+import { getSupabaseAnonKey, getSupabaseServiceKey, getSupabaseUrl } from "../_shared/env.ts";
 import { getAppOrigin } from "../_shared/origin.ts";
 
 const corsHeaders = {
@@ -14,9 +15,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SB_SERVICE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseUrl = getSupabaseUrl();
+    const supabaseServiceKey = getSupabaseServiceKey();
+    const supabaseAnonKey = getSupabaseAnonKey();
 
     // Verify caller is admin
     const authHeader = req.headers.get("Authorization");
@@ -105,7 +106,7 @@ Deno.serve(async (req) => {
         const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
           type: "magiclink",
           email: customerEmailLower,
-          options: { redirectTo: `${baseUrl}/portal` },
+          options: { redirectTo: `${baseUrl}/auth/callback` },
         });
 
         if (linkError) {
